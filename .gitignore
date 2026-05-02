@@ -1,0 +1,13 @@
+# Workshop upload staging
+Workshop/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Generated tile output
+output/
+tiles/

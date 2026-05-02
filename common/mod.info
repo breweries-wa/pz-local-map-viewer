@@ -1,0 +1,6 @@
+name=Local Map Viewer
+id=LocalMapViewer
+description=Locally-hosted map tile viewer for Project Zomboid B42. Generates a browsable map from your full game and mod installation — including Workshop maps — and serves it at localhost:8080. No in-game mod required for the core viewer.
+author=Ryan
+modversion=0.1
+pzversion=42
