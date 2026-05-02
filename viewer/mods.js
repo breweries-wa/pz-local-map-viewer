@@ -1,7 +1,7 @@
-// mods.js — loaded before pzmap.js
-// Intercepts b42map.com fetches (no CORS headers) and returns inline data so
-// the viewer never makes a cross-origin request. Tile images load via <img>
-// tags and bypass CORS entirely.
+// mods.js — loaded before pzmap.js, after openseadragon.js
+// Intercepts b42map.com requests (no CORS headers) and returns inline data
+// so the viewer never makes a blocked cross-origin request.
+// Tile images load via <img> tags and bypass CORS entirely.
 
 const _BASE_INFO = {
   w: 2314432, h: 1019072, skip: 0,
@@ -41,7 +41,10 @@ function b42Intercept(url) {
   if (url.endsWith('.dzi')) {
     return { body: VANILLA_DZI, type: 'application/xml' };
   }
-  if (url.endsWith('/map_info.json')) {
+  if (url.endsWith('/map_info.json') || url.endsWith('/marks.json')) {
+    if (url.endsWith('/marks.json')) {
+      return { body: 'null', type: 'application/json' };
+    }
     const type = url.split('/').slice(-2, -1)[0];
     const data = VANILLA_MAP_INFO[type] || _BASE_INFO;
     return { body: JSON.stringify(data), type: 'application/json' };
@@ -49,7 +52,7 @@ function b42Intercept(url) {
   return null;
 }
 
-// Patch window.fetch (used by pzmap modules)
+// Patch window.fetch (used by pzmap modules for map_info.json, marks.json, etc.)
 const _origFetch = window.fetch.bind(window);
 window.fetch = function(input, init) {
   const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
@@ -63,29 +66,20 @@ window.fetch = function(input, init) {
   return _origFetch(input, init);
 };
 
-// Patch XMLHttpRequest (used by OpenSeadragon)
-const _XHROpen = XMLHttpRequest.prototype.open;
-const _XHRSend = XMLHttpRequest.prototype.send;
-
-XMLHttpRequest.prototype.open = function(method, url, ...rest) {
-  this._b42hit = b42Intercept(url);
-  if (this._b42hit) return; // skip real open
-  return _XHROpen.call(this, method, url, ...rest);
-};
-
-XMLHttpRequest.prototype.send = function(...args) {
-  if (this._b42hit) {
-    const self = this;
-    const body = this._b42hit.body;
-    setTimeout(function() {
-      Object.defineProperty(self, 'readyState',    { value: 4,    configurable: true });
-      Object.defineProperty(self, 'status',        { value: 200,  configurable: true });
-      Object.defineProperty(self, 'responseText',  { value: body, configurable: true });
-      Object.defineProperty(self, 'response',      { value: body, configurable: true });
-      if (typeof self.onreadystatechange === 'function') self.onreadystatechange();
-      if (typeof self.onload === 'function') self.onload({ target: self });
-    }, 0);
-    return;
+// Patch OpenSeadragon.makeAjaxRequest (used to load DZI descriptors).
+// mods.js loads after openseadragon.js so OpenSeadragon is already defined.
+const _origMakeAjax = OpenSeadragon.makeAjaxRequest;
+OpenSeadragon.makeAjaxRequest = function(opts) {
+  const url = (typeof opts === 'string') ? opts : opts.url;
+  const hit = b42Intercept(url);
+  if (hit) {
+    const success = (typeof opts === 'string') ? arguments[1] : opts.success;
+    if (typeof success === 'function') {
+      setTimeout(function() {
+        success({ readyState: 4, status: 200, responseText: hit.body, response: hit.body });
+      }, 0);
+    }
+    return {};
   }
-  return _XHRSend.apply(this, args);
+  return _origMakeAjax.apply(OpenSeadragon, arguments);
 };
